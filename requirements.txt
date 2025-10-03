@@ -1,0 +1,4 @@
+paho-mqtt>=1.6.1
+pybluez>=0.23
+pytest>=7.0.0
+pytest-mock>=3.0.0

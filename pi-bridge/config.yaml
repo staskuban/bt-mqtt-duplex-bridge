@@ -1,0 +1,10 @@
+elm327:
+  mac: "XX:XX:XX:XX:XX:XX"
+mqtt:
+  broker: "mqtt.example.com:1883"
+  username: "user"
+  password: "pass"
+  data_topic: "elm327/data"
+  command_topic: "elm327/command"
+logging:
+  level: "info"
