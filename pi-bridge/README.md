@@ -18,30 +18,51 @@
 - Доступ к удаленному MQTT-брокеру (например, Mosquitto).
 - Docker и Docker Compose (для контейнеризированного запуска и тестирования).
 
-### Системные зависимости на Raspberry Pi
-Установите Go и BlueZ:
+### Системные зависимости на Raspberry Pi (Raspberry Pi OS или Ubuntu Server 24.04)
+Установите Go, BlueZ и Docker. Инструкции аналогичны для Ubuntu Server 24.04 (ARM64), используйте `apt` для установки.
+
+Установите Go (опционально, если компилируете на Pi; для запуска бинарника не нужно):
 ```
 sudo apt update
-wget https://go.dev/dl/go1.21.5.linux-arm64.tar.gz
-sudo tar -C /usr/local -xzf go1.21.5.linux-arm64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
+wget https://go.dev/dl/go1.23.0.linux-arm64.tar.gz  # Актуальная версия
+sudo tar -C /usr/local -xzf go1.23.0.linux-arm64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile
+source /etc/profile
+```
 
-sudo apt install bluez libbluetooth-dev docker.io docker-compose
+Установите BlueZ (Bluetooth stack) и Docker:
+```
+sudo apt install -y bluez libbluetooth-dev bluetooth pi-bluetooth  # pi-bluetooth опционально для Pi OS
+sudo apt install -y docker.io docker-compose
 sudo systemctl start bluetooth
 sudo systemctl enable bluetooth
-sudo usermod -aG docker $USER  # Для запуска Docker без sudo
+sudo usermod -aG docker $USER  # Перелогиньтесь после; для запуска Docker без sudo
+sudo systemctl start docker
+sudo systemctl enable docker
 ```
+
+Для Ubuntu Server 24.04:
+- BlueZ уже включен, но убедитесь в обновлении: `sudo apt upgrade bluez`.
+- Если проблемы с Bluetooth, установите дополнительные пакеты: `sudo apt install rfcomm bluez-tools`.
 
 Сопрягите ELM327 с Pi:
 ```
 bluetoothctl
 scan on
-pair XX:XX:XX:XX:XX:XX  # MAC-адрес ELM327
+pair XX:XX:XX:XX:XX:XX  # MAC-адрес ELM327 (включите устройство в режим pairing, если нужно)
 trust XX:XX:XX:XX:XX:XX
 connect XX:XX:XX:XX:XX:XX
 exit
 ```
+
+Для  соединения через RFCOMM :
+```
+sudo rfcomm bind 0 XX:XX:XX:XX:XX:XX 1  # Привяжет устройство к /dev/rfcomm0 на channel 1
+```
+- Это создаст виртуальный последовательный порт `/dev/rfcomm0`.
+- В коде [`main.go`](pi-bridge/main.go:70) подключение настроено на `net.DialTimeout("tcp", addr+":1", ...)`, но для реального Bluetooth рекомендуется изменить на `net.Dial("unix", "/dev/rfcomm0")` или интегрировать библиотеку `github.com/muka/go-bluetooth`.
+- Чтобы отвязать: `sudo rfcomm release 0`.
+- Для автозапуска rfcomm добавьте в systemd или скрипт запуска.
 
 ## Установка
 1. Клонируйте или скопируйте проект в директорию `pi-bridge/`.
