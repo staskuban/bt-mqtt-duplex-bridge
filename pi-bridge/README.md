@@ -44,7 +44,7 @@ sudo systemctl enable bluetooth
 - Если проблемы с Bluetooth, установите дополнительные пакеты: `sudo apt install rfcomm bluez-tools`.
 
 **Важно: Настройте RFCOMM перед запуском**
-
+ 
 
 Приложение **не управляет** `rfcomm` напрямую. Вы должны настроить его самостоятельно на хост-системе (Raspberry Pi).
 
