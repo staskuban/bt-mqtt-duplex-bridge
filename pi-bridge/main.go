@@ -4,14 +4,16 @@ import (
 	"bufio"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
-	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/spf13/viper"
+	"golang.org/x/sys/unix"
 )
 
 var logger = log.New(os.Stdout, "[ELM327-Bridge] ", log.LstdFlags|log.Lshortfile)
@@ -33,10 +35,15 @@ type Config struct {
 }
 
 var config Config
-var btConn net.Conn
+var btConn io.ReadWriteCloser
 var mqttClient mqtt.Client
 var btMutex sync.Mutex
 var reconnectInterval = 5 * time.Second
+
+// isDebug возвращает true если уровень логирования установлен в debug
+func isDebug() bool {
+	return config.Logging.Level == "debug"
+}
 
 func loadConfig() error {
 	viper.SetConfigName("config")
@@ -50,13 +57,50 @@ func loadConfig() error {
 		return fmt.Errorf("error unmarshaling config: %v", err)
 	}
 
+	// Валидация конфигурации
+	if err := validateConfig(); err != nil {
+		return err
+	}
+
 	logger.SetFlags(log.LstdFlags)
-	// Уровень логирования можно настроить, но для простоты используем info
+	return nil
+}
+
+func validateConfig() error {
+	// Проверка обязательных полей
+	if config.Elm327.Mac == "" || config.Elm327.Mac == "XX:XX:XX:XX:XX:XX" {
+		return fmt.Errorf("ELM327 MAC address must be set in config.yaml")
+	}
+
+	if config.MQTT.Broker == "" {
+		return fmt.Errorf("MQTT broker address must be set in config.yaml")
+	}
+
+	if config.MQTT.DataTopic == "" {
+		return fmt.Errorf("MQTT data topic must be set in config.yaml")
+	}
+
+	if config.MQTT.CommandTopic == "" {
+		return fmt.Errorf("MQTT command topic must be set in config.yaml")
+	}
+
+	// Проверка учетных данных MQTT
+	if (config.MQTT.Username == "" && config.MQTT.Password != "") ||
+		(config.MQTT.Username != "" && config.MQTT.Password == "") {
+		return fmt.Errorf("both MQTT username and password must be provided together, or both omitted for anonymous connection")
+	}
+
+	// Логирование режима подключения
+	if config.MQTT.Username != "" && config.MQTT.Password != "" {
+		logger.Printf("MQTT authentication: ENABLED")
+	} else {
+		logger.Printf("MQTT authentication: DISABLED (anonymous mode)")
+	}
 
 	return nil
 }
 
-func connectBluetooth(addr string) error {
+func connectBluetooth() error {
 	btMutex.Lock()
 	defer btMutex.Unlock()
 
@@ -64,17 +108,44 @@ func connectBluetooth(addr string) error {
 		btConn.Close()
 	}
 
-	// Примечание: Для реального Bluetooth RFCOMM на Linux/RPi рекомендуется использовать rfcomm bind для создания /dev/rfcomm0,
-	// затем dial("unix", "/dev/rfcomm0"). Здесь используется упрощенный net.Dial для демонстрации.
-	// Альтернатива: Использовать github.com/muka/go-bluetooth для прямого API.
-	conn, err := net.DialTimeout("tcp", addr+":1", 10*time.Second) // RFCOMM channel 1, timeout
-	if err != nil {
-		logger.Printf("Bluetooth connect error: %v", err)
-		return err
+	logger.Printf("Attempting to open RFCOMM device /dev/rfcomm0")
+
+	// Проверяем, существует ли /dev/rfcomm0
+	if _, err := os.Stat("/dev/rfcomm0"); os.IsNotExist(err) {
+		return fmt.Errorf("/dev/rfcomm0 does not exist. Please run 'sudo rfcomm bind 0 <MAC> <channel>' first")
 	}
 
-	btConn = conn
-	logger.Printf("Connected to Bluetooth device: %s", addr)
+	// Подключаемся к /dev/rfcomm0 как к файлу последовательного порта
+	f, err := os.OpenFile("/dev/rfcomm0", os.O_RDWR|unix.O_NOCTTY|os.O_SYNC, 0666)
+	if err != nil {
+		return fmt.Errorf("failed to open /dev/rfcomm0: %v. Check permissions and if device is connected", err)
+	}
+
+	btConn = f
+	logger.Printf("Successfully opened /dev/rfcomm0")
+
+	// Инициализация ELM327
+	time.Sleep(500 * time.Millisecond)
+	initCmd := []byte("ATZ\r")
+	if _, err := f.Write(initCmd); err != nil {
+		return fmt.Errorf("failed to send init command ATZ: %v", err)
+	}
+
+	logger.Printf("Sent init command ATZ to ELM327, waiting for response...")
+	response := make([]byte, 128)
+	n, readErr := f.Read(response)
+	if readErr != nil {
+		logger.Printf("Warning: No response from ELM327 after ATZ (err: %v). Device may not be ready.", readErr)
+	} else if n > 0 {
+		respStr := strings.TrimSpace(string(response[:n]))
+		logger.Printf("ELM327 response to ATZ: %q", respStr)
+		if strings.Contains(respStr, "ELM327") {
+			logger.Printf("ELM327 initialized successfully")
+		}
+	} else {
+		logger.Printf("Warning: Empty response from ELM327 after ATZ.")
+	}
+
 	return nil
 }
 
@@ -101,12 +172,22 @@ func readFromBluetooth() {
 			data = data[:len(data)-1]
 		}
 
+		if isDebug() {
+			logger.Printf("[DEBUG] Received data from Bluetooth: %s (hex: %x)", string(data), data)
+		}
+
 		encoded := base64.StdEncoding.EncodeToString(data)
+		if isDebug() {
+			logger.Printf("[DEBUG] Publishing to MQTT topic '%s', encoded payload: %s", config.MQTT.DataTopic, encoded)
+		}
+
 		if mqttClient != nil && mqttClient.IsConnected() {
 			token := mqttClient.Publish(config.MQTT.DataTopic, 1, false, encoded)
 			token.Wait()
 			if token.Error() != nil {
 				logger.Printf("MQTT publish error: %v", token.Error())
+			} else if isDebug() {
+				logger.Printf("[DEBUG] Successfully published data to MQTT")
 			}
 		}
 	}
@@ -134,9 +215,8 @@ func writeToBluetooth(command []byte) error {
 }
 
 func attemptReconnectBluetooth() {
-	addr := config.Elm327.Mac
 	for {
-		if err := connectBluetooth(addr); err != nil {
+		if err := connectBluetooth(); err != nil {
 			logger.Printf("Reconnecting Bluetooth in %v...", reconnectInterval)
 			time.Sleep(reconnectInterval)
 			continue
@@ -148,9 +228,13 @@ func attemptReconnectBluetooth() {
 func connectMQTT() error {
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker("tcp://" + config.MQTT.Broker)
+	// Проверяем, что username и password заданы в конфигурации
 	if config.MQTT.Username != "" && config.MQTT.Password != "" {
 		opts.SetUsername(config.MQTT.Username)
 		opts.SetPassword(config.MQTT.Password)
+		logger.Printf("Connecting to MQTT with authentication")
+	} else {
+		logger.Printf("Connecting to MQTT anonymously (no credentials provided)")
 	}
 	opts.SetClientID("elm327-bridge-" + fmt.Sprintf("%d", time.Now().Unix()))
 	opts.SetDefaultPublishHandler(func(client mqtt.Client, msg mqtt.Message) {
@@ -183,10 +267,18 @@ func connectMQTT() error {
 
 func onCommandReceived(client mqtt.Client, msg mqtt.Message) {
 	payload := msg.Payload()
+	if isDebug() {
+		logger.Printf("[DEBUG] Received MQTT command on topic '%s', raw payload: %s", msg.Topic(), string(payload))
+	}
+
 	decoded, err := base64.StdEncoding.DecodeString(string(payload))
 	if err != nil {
 		logger.Printf("Base64 decode error: %v", err)
 		return
+	}
+
+	if isDebug() {
+		logger.Printf("[DEBUG] Decoded MQTT command: %s (hex: %x)", string(decoded), decoded)
 	}
 
 	if err := writeToBluetooth(decoded); err != nil {
@@ -208,11 +300,6 @@ func attemptReconnectMQTT() {
 func main() {
 	if err := loadConfig(); err != nil {
 		logger.Fatalf("Failed to load config: %v", err)
-	}
-
-	addr := config.Elm327.Mac
-	if addr == "XX:XX:XX:XX:XX:XX" {
-		logger.Fatal("Please set the ELM327 MAC address in config.yaml")
 	}
 
 	// Initial connections

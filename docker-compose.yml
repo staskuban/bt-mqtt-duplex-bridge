@@ -11,19 +11,6 @@ services:
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
     restart: unless-stopped
-
-  app:
-    build: .
-    container_name: car-diag-app
-    depends_on:
-      - mosquitto
-    volumes:
-      - .:/app
-    privileged: true
-    devices:
-      - /dev:/dev
-    restart: unless-stopped
-
 volumes:
   mosquitto_data:
   mosquitto_log:

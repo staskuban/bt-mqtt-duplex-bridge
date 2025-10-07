@@ -29,13 +29,33 @@ func (m *MockMQTTClient) Subscribe(topic string, qos byte, callback mqtt.Message
 	return args.Get(0).(mqtt.Token)
 }
 
+func (m *MockMQTTClient) SubscribeMultiple(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
+	args := m.Called(filters, callback)
+	return args.Get(0).(mqtt.Token)
+}
+
+func (m *MockMQTTClient) Unsubscribe(topics ...string) mqtt.Token {
+	args := m.Called(topics)
+	return args.Get(0).(mqtt.Token)
+}
+
 func (m *MockMQTTClient) IsConnected() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockMQTTClient) IsConnectionOpen() bool {
 	args := m.Called()
 	return args.Bool(0)
 }
 
 func (m *MockMQTTClient) Disconnect(quiesce uint) {
 	m.Called(quiesce)
+}
+
+func (m *MockMQTTClient) OptionsReader() mqtt.ClientOptionsReader {
+	args := m.Called()
+	return args.Get(0).(mqtt.ClientOptionsReader)
 }
 
 func TestOnCommandReceived(t *testing.T) {
