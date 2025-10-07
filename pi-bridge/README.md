@@ -37,7 +37,7 @@ source /etc/profile
 sudo apt install -y bluez libbluetooth-dev bluetooth pi-bluetooth  # pi-bluetooth опционально для Pi OS
 sudo systemctl start bluetooth
 sudo systemctl enable bluetooth
-```
+``` 
  
 Для Ubuntu Server 24.04:
 - BlueZ уже включен, но убедитесь в обновлении: `sudo apt upgrade bluez`.
