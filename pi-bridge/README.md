@@ -38,13 +38,13 @@ sudo apt install -y bluez libbluetooth-dev bluetooth pi-bluetooth  # pi-bluetoot
 sudo systemctl start bluetooth
 sudo systemctl enable bluetooth
 ```
-
+ 
 Для Ubuntu Server 24.04:
 - BlueZ уже включен, но убедитесь в обновлении: `sudo apt upgrade bluez`.
 - Если проблемы с Bluetooth, установите дополнительные пакеты: `sudo apt install rfcomm bluez-tools`.
 
 **Важно: Настройте RFCOMM перед запуском**
- 
+  
 
 Приложение **не управляет** `rfcomm` напрямую. Вы должны настроить его самостоятельно на хост-системе (Raspberry Pi).
 

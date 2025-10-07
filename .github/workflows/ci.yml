@@ -44,6 +44,7 @@ jobs:
       REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
       REMOTE_USER: ${{ secrets.REMOTE_USER }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      SSH_PASSPHRASE: ${{ secrets.SSH_PASSPHRASE }}
     steps:
     - name: Download artifact
       uses: actions/download-artifact@v4
@@ -56,6 +57,7 @@ jobs:
         host: ${{ env.REMOTE_HOST }}
         username: ${{ env.REMOTE_USER }}
         key: ${{ env.SSH_PRIVATE_KEY }}
+        passphrase: ${{ env.SSH_PASSPHRASE }}
         port: 22
         source: "elm327-bridge"
         target: "/home/user/elm327/"
