@@ -1,6 +1,33 @@
 version: '3.8'
 
 services:
+  github-runner:
+    # Используем образ с поддержкой ARM64
+    image: myoung34/github-runner:latest
+    env_file:
+      - .env
+    environment:
+      - REPO_URL=${REPO_URL}
+      - RUNNER_TOKEN=${RUNNER_TOKEN}
+      - RUNNER_NAME=macbook-arm64-runner
+      - RUNNER_WORKDIR=/tmp/github-runner
+      # Добавляем метки для архитектуры
+      - RUNNER_LABELS=self-hosted,arm64,macos
+    volumes:
+      # # Монтируем Docker socket для доступа к Docker
+      # - /var/run/docker.sock:/var/run/docker.sock
+      # Рабочая директория для раннера
+      - ./work:/tmp/github-runner
+    restart: unless-stopped
+    # Ограничиваем ресурсы для предотвращения перегрузки MacBook
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
   mosquitto:
     image: eclipse-mosquitto:2.0
     container_name: mosquitto
