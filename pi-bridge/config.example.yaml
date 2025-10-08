@@ -1,0 +1,33 @@
+# Пример конфигурации для ELM327 Bridge
+# Скопируйте этот файл в config.yaml и настройте параметры
+
+# Конфигурация Bluetooth адаптера
+bluetooth:
+  device_path: "/dev/rfcomm0"          # Путь к Bluetooth устройству
+  reconnect_interval: "5s"             # Интервал переподключения при ошибках
+  connect_timeout: "10s"               # Таймаут подключения
+  read_timeout: "3s"                   # Таймаут чтения
+  write_timeout: "1s"                  # Таймаут записи
+  init_commands:                       # Команды инициализации ELM327
+    - "ATZ"                           # Полный сброс
+    - "ATE0"                          # Отключить эхо
+    - "ATL0"                          # Отключить перевод строки
+    - "ATH1"                          # Включить заголовки
+    - "ATSP0"                         # Автоматический выбор протокола
+
+# Конфигурация MQTT клиента
+mqtt:
+  broker: "tcp://localhost:1883"       # Адрес MQTT брокера
+  username: ""                         # Имя пользователя (опционально)
+  password: ""                         # Пароль (опционально)
+  client_id: ""                        # ID клиента (генерируется автоматически если пустой)
+  data_topic: "car/telemetry"           # Базовый топик для данных телеметрии
+  command_topic: "car/command"         # Базовый топик для команд
+  qos: 1                               # Quality of Service (0, 1, 2)
+  keep_alive: 60                       # Интервал keep alive в секундах
+  connect_timeout: "10s"               # Таймаут подключения
+  auto_reconnect: true                 # Автоматическое переподключение
+
+# Конфигурация логирования
+logging:
+  level: "info"                        # Уровень логирования: debug, info, warn, error

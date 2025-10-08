@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # MQTT брокер (Eclipse Mosquitto)
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: elm327-mqtt-broker
+    ports:
+      - "1883:1883"    # MQTT порт
+      - "9001:9001"    # WebSocket порт (опционально)
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-W", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ELM327 Bridge
+  elm327-bridge:
+    build: .
+    container_name: elm327-bridge
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - /dev/rfcomm0:/dev/rfcomm0:rwm  # Доступ к Bluetooth устройству
+    devices:
+      - /dev/rfcomm0:/dev/rfcomm0      # Прямая передача устройства
+    environment:
+      - TZ=Europe/Moscow
+    restart: unless-stopped
+    privileged: true  # Требуется для доступа к Bluetooth устройству
+
+volumes:
+  mosquitto_data:
+    driver: local
+  mosquitto_logs:
+    driver: local
+
+networks:
+  default:
+    name: elm327-network
